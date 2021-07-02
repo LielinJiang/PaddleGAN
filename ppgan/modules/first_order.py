@@ -145,6 +145,7 @@ class UpBlock2d(nn.Layer):
 
     def forward(self, x):
         out = F.interpolate(x, scale_factor=2)
+        # out = paddle.fluid.layers.resize_nearest(x, scale=2)
         out = self.conv(out)
         out = self.norm(out)
         out = F.relu(out)
@@ -325,7 +326,10 @@ class AntiAliasInterpolation2d(nn.Layer):
         inv_scale = 1 / self.scale
         int_inv_scale = int(inv_scale)
         assert (inv_scale == int_inv_scale)
-        out = out[:, :, ::int_inv_scale, ::int_inv_scale]
+        # print('debug 0:', out.shape)
+        # out = out[:, :, ::int_inv_scale, ::int_inv_scale]
+        # out = F.interpolate(out, scale_factor=self.scale)
+        out = paddle.fluid.layers.resize_nearest(out, scale=self.scale)
         # patch end
-
+        # print('debug 1:', out.shape)
         return out
