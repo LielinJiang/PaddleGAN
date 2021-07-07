@@ -151,7 +151,8 @@ class ResidualBlockNoBN(nn.Layer):
         """
         identity = x
         out = self.conv2(self.relu(self.conv1(x)))
-        return identity + out * self.res_scale
+        return paddle.fluid.layers.elementwise_add(identity, out * self.res_scale)
+        # return identity + out * self.res_scale
 
 
 def flow_warp(x,
@@ -175,17 +176,17 @@ def flow_warp(x,
     Returns:
         Tensor: Warped image or feature map.
     """
-    if x.shape[-2:] != flow.shape[1:3]:
-        raise ValueError(f'The spatial sizes of input ({x.shape[-2:]}) and '
-                         f'flow ({flow.shape[1:3]}) are not the same.')
-    _, _, h, w = x.shape
+    # if x.shape[-2:] != flow.shape[1:3]:
+    #     raise ValueError(f'The spatial sizes of input ({x.shape[-2:]}) and '
+    #                      f'flow ({flow.shape[1:3]}) are not the same.')
+    _, _, h, w = paddle.shape(x)#.shape
     # create mesh grid
     grid_y, grid_x = paddle.meshgrid(paddle.arange(0, h), paddle.arange(0, w))
     grid = paddle.stack((grid_x, grid_y), axis=2)  # (w, h, 2)
     grid = paddle.cast(grid, 'float32')
     grid.stop_gradient = True
 
-    grid_flow = grid + flow
+    grid_flow = paddle.fluid.layers.elementwise_add(grid, flow)
     # scale grid_flow to [-1,1]
     grid_flow_x = 2.0 * grid_flow[:, :, :, 0] / max(w - 1, 1) - 1.0
     grid_flow_y = 2.0 * grid_flow[:, :, :, 1] / max(h - 1, 1) - 1.0
@@ -294,7 +295,7 @@ class SPyNet(nn.Layer):
             Tensor: Estimated optical flow: (n, 2, h, w).
         """
 
-        n, _, h, w = ref.shape
+        n, _, h, w = paddle.shape(ref)
 
         # normalize the input images
         ref = [(ref - self.mean) / self.std]
@@ -308,72 +309,73 @@ class SPyNet(nn.Layer):
         supp = supp[::-1]
 
         # flow computation
-        flow = paddle.to_tensor(np.zeros([n, 2, h // 32, w // 32], 'float32'))
+        flow = paddle.zeros([n, 2, h // 32, w // 32])
+        # flow = paddle.to_tensor(np.zeros([n, 2, h // 32, w // 32], 'float32'))
 
         # level=0
         flow_up = flow
-        flow = flow_up + self.basic_module0(
+        flow = paddle.fluid.layers.elementwise_add(flow_up, self.basic_module0(
             paddle.concat([
                 ref[0],
                 flow_warp(supp[0],
                           flow_up.transpose([0, 2, 3, 1]),
                           padding_mode='border'), flow_up
-            ], 1))
+            ], 1)))
 
         # level=1
         flow_up = F.interpolate(
             flow, scale_factor=2, mode='bilinear', align_corners=True) * 2.0
-        flow = flow_up + self.basic_module1(
+        flow = paddle.fluid.layers.elementwise_add(flow_up, self.basic_module1(
             paddle.concat([
                 ref[1],
                 flow_warp(supp[1],
                           flow_up.transpose([0, 2, 3, 1]),
                           padding_mode='border'), flow_up
-            ], 1))
+            ], 1)))
 
         # level=2
         flow_up = F.interpolate(
             flow, scale_factor=2, mode='bilinear', align_corners=True) * 2.0
-        flow = flow_up + self.basic_module2(
+        flow = paddle.fluid.layers.elementwise_add(flow_up, self.basic_module2(
             paddle.concat([
                 ref[2],
                 flow_warp(supp[2],
                           flow_up.transpose([0, 2, 3, 1]),
                           padding_mode='border'), flow_up
-            ], 1))
+            ], 1)))
 
         # level=3
         flow_up = F.interpolate(
             flow, scale_factor=2, mode='bilinear', align_corners=True) * 2.0
-        flow = flow_up + self.basic_module3(
+        flow = paddle.fluid.layers.elementwise_add(flow_up, self.basic_module3(
             paddle.concat([
                 ref[3],
                 flow_warp(supp[3],
                           flow_up.transpose([0, 2, 3, 1]),
                           padding_mode='border'), flow_up
-            ], 1))
+            ], 1)))
 
         # level=4
         flow_up = F.interpolate(
             flow, scale_factor=2, mode='bilinear', align_corners=True) * 2.0
-        flow = flow_up + self.basic_module4(
+        flow = paddle.fluid.layers.elementwise_add(flow_up, self.basic_module4(
             paddle.concat([
                 ref[4],
                 flow_warp(supp[4],
                           flow_up.transpose([0, 2, 3, 1]),
                           padding_mode='border'), flow_up
-            ], 1))
+            ], 1)))
 
         # level=5
         flow_up = F.interpolate(
             flow, scale_factor=2, mode='bilinear', align_corners=True) * 2.0
-        flow = flow_up + self.basic_module5(
+        flow = paddle.fluid.layers.elementwise_add(flow_up, self.basic_module5(
             paddle.concat([
                 ref[5],
                 flow_warp(supp[5],
                           flow_up.transpose([0, 2, 3, 1]),
                           padding_mode='border'), flow_up
-            ], 1))
+            ], 1)))
 
         return flow
 
@@ -391,15 +393,16 @@ class SPyNet(nn.Layer):
         """
 
         # upsize to a multiple of 32
-        h, w = ref.shape[2:4]
+        h, w = paddle.shape(ref)[2:4]
+        # h, w = ref.shape[2:4]
         w_up = w if (w % 32) == 0 else 32 * (w // 32 + 1)
         h_up = h if (h % 32) == 0 else 32 * (h // 32 + 1)
         ref = F.interpolate(ref,
-                            size=(h_up, w_up),
+                            size=[h_up, w_up],
                             mode='bilinear',
                             align_corners=False)
         supp = F.interpolate(supp,
-                             size=(h_up, w_up),
+                             size=[h_up, w_up],
                              mode='bilinear',
                              align_corners=False)
         ref.stop_gradient = False
@@ -407,7 +410,7 @@ class SPyNet(nn.Layer):
         # compute flow, and resize back to the original resolution
         flow_up = self.compute_flow(ref, supp)
         flow = F.interpolate(flow_up,
-                             size=(h, w),
+                             size=[h, w],
                              mode='bilinear',
                              align_corners=False)
 
@@ -525,7 +528,7 @@ class BasicVSRNet(nn.Layer):
         if lrs.shape[1] % 2 == 0:
             lrs_1, lrs_2 = paddle.chunk(lrs, 2, axis=1)
             lrs_2 = paddle.flip(lrs_2, [1])
-            if paddle.norm(lrs_1 - lrs_2) == 0:
+            if paddle.norm(paddle.fluid.layers.elementwise_sub(lrs_1, lrs_2)) == 0:
                 self.is_mirror_extended = True
 
     def compute_flow(self, lrs):
@@ -544,8 +547,9 @@ class BasicVSRNet(nn.Layer):
                 backward-time propagation (current to next).
         """
 
-        n, t, c, h, w = lrs.shape
-
+        # n, t, c, h, w = lrs.shape
+        n, t, c, h, w = paddle.shape(lrs)
+        # print('debug:', n, t, c, h, w)
         lrs_1 = lrs[:, :-1, :, :, :].reshape([-1, c, h, w])
         lrs_2 = lrs[:, 1:, :, :, :].reshape([-1, c, h, w])
 
@@ -559,6 +563,7 @@ class BasicVSRNet(nn.Layer):
 
         return flows_forward, flows_backward
 
+    @paddle.jit.to_static(input_spec=[paddle.static.InputSpec(shape=[None, None, 3, None, None], name='lrs')])
     def forward(self, lrs):
         """Forward function for BasicVSR.
 
@@ -570,9 +575,9 @@ class BasicVSRNet(nn.Layer):
         """
 
         n, t, c, h, w = lrs.shape
-        assert h >= 64 and w >= 64, (
-            'The height and width of inputs should be at least 64, '
-            f'but got {h} and {w}.')
+        # assert h >= 64 and w >= 64, (
+        #     'The height and width of inputs should be at least 64, '
+        #     f'but got {h} and {w}.')
 
         # check whether the input is an extended sequence
         self.check_if_mirror_extended(lrs)
@@ -582,12 +587,13 @@ class BasicVSRNet(nn.Layer):
 
         # backward-time propgation
         outputs = []
-        feat_prop = paddle.to_tensor(
-            np.zeros([n, self.mid_channels, h, w], 'float32'))
+        feat_prop = paddle.zeros([n, self.mid_channels, h, w])
+        # feat_prop = paddle.to_tensor(
+        #     np.zeros([n, self.mid_channels, h, w], 'float32'))
         for i in range(t - 1, -1, -1):
             if i < t - 1:  # no warping required for the last timestep
-                flow = flows_backward[:, i, :, :, :]
-                feat_prop = flow_warp(feat_prop, flow.transpose([0, 2, 3, 1]))
+                flow1 = flows_backward[:, i, :, :, :]
+                feat_prop = flow_warp(feat_prop, flow1.transpose([0, 2, 3, 1]))
 
             feat_prop = paddle.concat([lrs[:, i, :, :, :], feat_prop], axis=1)
             feat_prop = self.backward_resblocks(feat_prop)
@@ -617,7 +623,7 @@ class BasicVSRNet(nn.Layer):
             out = self.lrelu(self.conv_hr(out))
             out = self.conv_last(out)
             base = self.img_upsample(lr_curr)
-            out += base
+            out = paddle.fluid.layers.elementwise_add(out, base)
             outputs[i] = out
-
+        print('output shape:', outputs[0].shape)
         return paddle.stack(outputs, axis=1)
