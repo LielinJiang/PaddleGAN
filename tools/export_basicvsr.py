@@ -30,7 +30,8 @@ weight = paddle.load('basicvsr_reds.pdparams')
 # model.nets['Gen_Full'].generator.set_state_dict(weight['generator'])
 model.nets['generator'].set_state_dict(weight['generator'])
 
-source = np.random.random([1, 10, 3, 64, 64]).astype('float32')
+# source = np.random.random([1, 10, 3, 64, 64]).astype('float32')
+source = np.ones([1, 10, 3, 64, 64]).astype('float32')
 # driving = np.random.random([1, 3, 256, 256]).astype('float32')
 
 source = paddle.to_tensor(source)
@@ -42,5 +43,6 @@ source = paddle.to_tensor(source)
 # # 将转换后的模型保存
 # vsr_static.save_inference_model(save_dirname, feed=[0], fetch=[0])
 y = model.nets['generator'](source)
-print(y.shape)
+print(y)
+
 # paddle.jit.save(model.nets['generator'], "./basicvsr_dy2st/generator", input_spec=[source])

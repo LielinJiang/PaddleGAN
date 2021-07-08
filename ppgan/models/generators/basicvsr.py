@@ -574,7 +574,8 @@ class BasicVSRNet(nn.Layer):
             Tensor: Output HR sequence with shape (n, t, c, 4h, 4w).
         """
 
-        n, t, c, h, w = lrs.shape
+        n, _, c, h, w = lrs.shape
+        t = paddle.shape(lrs)[1]
         # assert h >= 64 and w >= 64, (
         #     'The height and width of inputs should be at least 64, '
         #     f'but got {h} and {w}.')
