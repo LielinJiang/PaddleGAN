@@ -40,7 +40,8 @@ class OcclusionAwareGenerator(nn.Layer):
                  dense_motion_params=None,
                  estimate_jacobian=False,
                  inference=False,
-                 mobile_net=False):
+                 mobile_net=False,
+                 deep_stem=False):
         super(OcclusionAwareGenerator, self).__init__()
 
         if dense_motion_params is not None:
@@ -48,15 +49,35 @@ class OcclusionAwareGenerator(nn.Layer):
                 num_kp=num_kp,
                 num_channels=num_channels,
                 estimate_occlusion_map=estimate_occlusion_map,
-                **dense_motion_params, mobile_net=mobile_net)
+                **dense_motion_params, mobile_net=mobile_net,
+                deep_stem=deep_stem)
         else:
             self.dense_motion_network = None
 
-        self.first = SameBlock2d(num_channels,
-                                 block_expansion,
-                                 kernel_size=(7, 7),
-                                 padding=(3, 3),
-                                 mobile_net=mobile_net)
+        if not deep_stem:
+            self.first = SameBlock2d(num_channels,
+                                    block_expansion,
+                                    kernel_size=(7, 7),
+                                    padding=(3, 3),
+                                    mobile_net=mobile_net)
+        else:
+            self.first = nn.Sequential(
+                    SameBlock2d(num_channels,
+                                    num_channels,
+                                    kernel_size=3,
+                                    padding=1,
+                                    mobile_net=mobile_net),
+                    SameBlock2d(num_channels,
+                                    num_channels,
+                                    kernel_size=3,
+                                    padding=1,
+                                    mobile_net=mobile_net),
+                    SameBlock2d(num_channels,
+                                    block_expansion,
+                                    kernel_size=3,
+                                    padding=1,
+                                    mobile_net=mobile_net)
+                )
 
         down_blocks = []
         if mobile_net:
@@ -117,10 +138,28 @@ class OcclusionAwareGenerator(nn.Layer):
                     'r' + str(i),
                     ResBlock2d(in_features, kernel_size=(3, 3), padding=(1, 1)))
 
-        self.final = nn.Conv2D(block_expansion,
-                               num_channels,
-                               kernel_size=(7, 7),
-                               padding=(3, 3))
+        if not deep_stem:
+            self.final = nn.Conv2D(block_expansion,
+                                num_channels,
+                                kernel_size=(7, 7),
+                                padding=(3, 3))
+        else:
+            self.final = nn.Sequential(
+                    nn.Conv2D(block_expansion,
+                                block_expansion,
+                                kernel_size=3,
+                                padding=1),
+                    nn.ReLU(),
+                    nn.Conv2D(block_expansion,
+                                block_expansion,
+                                kernel_size=3,
+                                padding=1),
+                    nn.ReLU(),
+                    nn.Conv2D(block_expansion,
+                                num_channels,
+                                kernel_size=3,
+                                padding=1)
+                )
         self.estimate_occlusion_map = estimate_occlusion_map
         self.num_channels = num_channels
         self.inference = inference

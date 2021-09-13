@@ -35,7 +35,8 @@ class KPDetector(nn.Layer):
                  scale_factor=1,
                  single_jacobian_map=False,
                  pad=0,
-                 mobile_net=False):
+                 mobile_net=False,
+                 deep_stem=False):
         super(KPDetector, self).__init__()
 
         self.predictor = Hourglass(block_expansion,
@@ -44,22 +45,67 @@ class KPDetector(nn.Layer):
                                    num_blocks=num_blocks,
                                    mobile_net=mobile_net)
 
-        self.kp = nn.Conv2D(in_channels=self.predictor.out_filters,
-                            out_channels=num_kp,
-                            kernel_size=(7, 7),
-                            padding=pad)
+        if not deep_stem:
+            self.kp = nn.Conv2D(in_channels=self.predictor.out_filters,
+                                out_channels=num_kp,
+                                kernel_size=(7, 7),
+                                padding=pad)
+        else:
+            self.kp = nn.Sequential(
+                nn.Conv2D(in_channels=self.predictor.out_filters,
+                        out_channels=self.predictor.out_filters,
+                        kernel_size=(3, 3),
+                        padding=pad),
+                nn.ReLU(),
+                nn.Conv2D(in_channels=self.predictor.out_filters,
+                        out_channels=self.predictor.out_filters,
+                        kernel_size=(3, 3),
+                        padding=pad),
+                nn.ReLU(),
+                nn.Conv2D(in_channels=self.predictor.out_filters,
+                        out_channels=num_kp,
+                        kernel_size=(3, 3),
+                        padding=pad),
+            )
 
         if estimate_jacobian:
             self.num_jacobian_maps = 1 if single_jacobian_map else num_kp
-            self.jacobian = nn.Conv2D(in_channels=self.predictor.out_filters,
-                                      out_channels=4 * self.num_jacobian_maps,
-                                      kernel_size=(7, 7),
-                                      padding=pad)
-            self.jacobian.weight.set_value(
+            if not deep_stem:
+                self.jacobian = nn.Conv2D(in_channels=self.predictor.out_filters,
+                                        out_channels=4 * self.num_jacobian_maps,
+                                        kernel_size=(7, 7),
+                                        padding=pad)
+                self.jacobian.weight.set_value(
                 paddle.zeros(self.jacobian.weight.shape, dtype='float32'))
-            self.jacobian.bias.set_value(
-                paddle.to_tensor([1, 0, 0, 1] *
-                                 self.num_jacobian_maps).astype('float32'))
+                self.jacobian.bias.set_value(
+                    paddle.to_tensor([1, 0, 0, 1] *
+                                    self.num_jacobian_maps).astype('float32'))
+            else:
+                self.jacobian = nn.Sequential(
+                    nn.Conv2D(in_channels=self.predictor.out_filters,
+                        out_channels=self.predictor.out_filters,
+                        kernel_size=(3, 3),
+                        padding=pad),
+                    nn.ReLU(),
+                    nn.Conv2D(in_channels=self.predictor.out_filters,
+                            out_channels=self.predictor.out_filters,
+                            kernel_size=(3, 3),
+                            padding=pad),
+                    nn.ReLU(),
+                    nn.Conv2D(in_channels=self.predictor.out_filters,
+                            out_channels=4 * self.num_jacobian_maps,
+                            kernel_size=(3, 3),
+                            padding=pad),
+                )
+                self.jacobian[0].weight.set_value(
+                    paddle.zeros(self.jacobian[0].weight.shape, dtype='float32'))
+                self.jacobian[2].weight.set_value(
+                    paddle.zeros(self.jacobian[2].weight.shape, dtype='float32'))
+                self.jacobian[4].weight.set_value(
+                    paddle.zeros(self.jacobian[4].weight.shape, dtype='float32'))
+                self.jacobian[-1].bias.set_value(
+                    paddle.to_tensor([1, 0, 0, 1] *
+                                    self.num_jacobian_maps).astype('float32'))
         else:
             self.jacobian = None
 
@@ -87,6 +133,7 @@ class KPDetector(nn.Layer):
         prediction = self.kp(feature_map)
 
         final_shape = prediction.shape
+        # print('debug final shape:', final_shape)
         heatmap = prediction.reshape([final_shape[0], final_shape[1], -1])
         heatmap = F.softmax(heatmap / self.temperature, axis=2)
         heatmap = heatmap.reshape(final_shape)
