@@ -39,7 +39,7 @@ dataset:
 
 model:
   name: FirstOrderModelMobile
-  mode: both # should be kp_detector, generator, both
+  mode: generator # should be kp_detector, generator, both
   kp_weight_path: None
   gen_weight_path: None
   common_params:
