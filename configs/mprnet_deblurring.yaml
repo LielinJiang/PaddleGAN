@@ -14,16 +14,19 @@ model:
 
 dataset:
   train:
-    name: MPRTrain
-    rgb_dir: 'data/GoPro/train'
+    name: RepeatDataset
+    times: 1000
     num_workers: 4
-    batch_size: 2
-    img_options:
-      patch_size: 256
+    batch_size: 2  #4 gpus
+    dataset:
+      name: MPRTrain
+      rgb_dir: 'data/GoPro/train'
+      img_options:
+        patch_size: 128
   test:
     name: MPRVal
     rgb_dir: 'data/GoPro/test'
-    num_workers: 4
+    num_workers: 0
     batch_size: 2
     img_options:
       patch_size: 256
